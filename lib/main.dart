@@ -51,10 +51,7 @@ class _ProductPageState extends State<ProductPage> {
   Future<List<Map<String, dynamic>>> getProducts() async {
     final response = await Supabase.instance.client
         .from('products')
-        .select(
-          'id, seller_id, name, description, category, '
-          'price, stock, image_url, is_active, created_at, updated_at',
-        )
+        .select('id, seller_id, name, description, category, price, stock, image_url, is_active, created_at, updated_at')
         .eq('is_active', true)
         .order('id', ascending: false);
 
