@@ -4,6 +4,9 @@ import 'supabase_config.dart';
 
 final supabase = Supabase.instance.client;
 
+// Harus sama dengan redirect URL di Supabase dan AndroidManifest.xml.
+const String recoveryRedirectUrl = 'bmarket://reset-password';
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -34,14 +37,51 @@ class BmarketApp extends StatelessWidget {
 }
 
 // ========================================
-// AUTH GATE
+// AUTH GATE DAN PEMULIHAN PASSWORD
 // ========================================
 
-class AuthGate extends StatelessWidget {
+class AuthGate extends StatefulWidget {
   const AuthGate({super.key});
 
   @override
+  State<AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends State<AuthGate> {
+  bool recoveryMode = false;
+  late final StreamSubscription<AuthState> authSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+
+    authSubscription = supabase.auth.onAuthStateChange.listen((data) {
+      if (data.event == AuthChangeEvent.passwordRecovery) {
+        if (mounted) {
+          setState(() => recoveryMode = true);
+        }
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    authSubscription.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (recoveryMode) {
+      return ResetPasswordPage(
+        onCompleted: () {
+          if (mounted) {
+            setState(() => recoveryMode = false);
+          }
+        },
+      );
+    }
+
     return StreamBuilder<AuthState>(
       stream: supabase.auth.onAuthStateChange,
       builder: (context, snapshot) {
@@ -76,6 +116,14 @@ class _LoginPageState extends State<LoginPage> {
   bool isRegister = false;
   bool loading = false;
   bool obscurePassword = true;
+
+  void showMessage(String message) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
 
   Future<void> authenticate() async {
     final email = emailController.text.trim();
@@ -125,18 +173,36 @@ class _LoginPageState extends State<LoginPage> {
     } catch (e) {
       showMessage('Terjadi kesalahan: $e');
     } finally {
-      if (mounted) {
-        setState(() => loading = false);
-      }
+      if (mounted) setState(() => loading = false);
     }
   }
 
-  void showMessage(String message) {
-    if (!mounted) return;
+  Future<void> sendRecoveryEmail() async {
+    final email = emailController.text.trim();
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    if (email.isEmpty || !email.contains('@')) {
+      showMessage('Masukkan email akun Bmarket terlebih dahulu');
+      return;
+    }
+
+    setState(() => loading = true);
+
+    try {
+      await supabase.auth.resetPasswordForEmail(
+        email,
+        redirectTo: recoveryRedirectUrl,
+      );
+
+      showMessage(
+        'Permintaan pemulihan dikirim. Periksa kotak masuk atau folder spam email kamu.',
+      );
+    } on AuthException catch (e) {
+      showMessage('Gagal mengirim email: ${e.message}');
+    } catch (e) {
+      showMessage('Terjadi kesalahan: $e');
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
   }
 
   @override
@@ -176,7 +242,6 @@ class _LoginPageState extends State<LoginPage> {
                 style: const TextStyle(fontSize: 18),
               ),
               const SizedBox(height: 35),
-
               TextField(
                 controller: emailController,
                 keyboardType: TextInputType.emailAddress,
@@ -188,9 +253,7 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 ),
               ),
-
               const SizedBox(height: 15),
-
               TextField(
                 controller: passwordController,
                 obscureText: obscurePassword,
@@ -215,8 +278,17 @@ class _LoginPageState extends State<LoginPage> {
                 ),
               ),
 
-              const SizedBox(height: 25),
+              if (!isRegister) ...[
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: loading ? null : sendRecoveryEmail,
+                    child: const Text('Lupa Password?'),
+                  ),
+                ),
+              ],
 
+              const SizedBox(height: 15),
               SizedBox(
                 width: double.infinity,
                 height: 52,
@@ -238,9 +310,7 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                 ),
               ),
-
               const SizedBox(height: 15),
-
               TextButton(
                 onPressed: loading
                     ? null
@@ -253,6 +323,191 @@ class _LoginPageState extends State<LoginPage> {
                   isRegister
                       ? 'Sudah punya akun? Login'
                       : 'Belum punya akun? Daftar sekarang',
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ========================================
+// HALAMAN PASSWORD BARU
+// ========================================
+
+class ResetPasswordPage extends StatefulWidget {
+  final VoidCallback onCompleted;
+
+  const ResetPasswordPage({
+    super.key,
+    required this.onCompleted,
+  });
+
+  @override
+  State<ResetPasswordPage> createState() =>
+      _ResetPasswordPageState();
+}
+
+class _ResetPasswordPageState extends State<ResetPasswordPage> {
+  final passwordController = TextEditingController();
+  final confirmController = TextEditingController();
+
+  bool loading = false;
+  bool obscurePassword = true;
+  bool obscureConfirm = true;
+
+  void showMessage(String message) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  Future<void> updatePassword() async {
+    final password = passwordController.text;
+    final confirm = confirmController.text;
+
+    if (password.length < 6) {
+      showMessage('Password baru minimal 6 karakter');
+      return;
+    }
+
+    if (password != confirm) {
+      showMessage('Konfirmasi password tidak sama');
+      return;
+    }
+
+    if (supabase.auth.currentSession == null) {
+      showMessage(
+        'Sesi pemulihan tidak ditemukan. Silakan minta email pemulihan baru.',
+      );
+      return;
+    }
+
+    setState(() => loading = true);
+
+    try {
+      await supabase.auth.updateUser(
+        UserAttributes(password: password),
+      );
+
+      if (!mounted) return;
+
+      showMessage('Password berhasil diperbarui');
+      widget.onCompleted();
+    } on AuthException catch (e) {
+      showMessage('Gagal memperbarui password: ${e.message}');
+    } catch (e) {
+      showMessage('Terjadi kesalahan: $e');
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    passwordController.dispose();
+    confirmController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Buat Password Baru'),
+        backgroundColor: Colors.green,
+        foregroundColor: Colors.white,
+      ),
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            children: [
+              const Icon(
+                Icons.lock_reset,
+                color: Colors.green,
+                size: 75,
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Atur Password Baru',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'Masukkan password baru untuk akun Bmarket kamu.',
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 30),
+              TextField(
+                controller: passwordController,
+                obscureText: obscurePassword,
+                decoration: InputDecoration(
+                  labelText: 'Password baru',
+                  prefixIcon: const Icon(Icons.lock),
+                  suffixIcon: IconButton(
+                    onPressed: () {
+                      setState(() {
+                        obscurePassword = !obscurePassword;
+                      });
+                    },
+                    icon: Icon(
+                      obscurePassword
+                          ? Icons.visibility
+                          : Icons.visibility_off,
+                    ),
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 15),
+              TextField(
+                controller: confirmController,
+                obscureText: obscureConfirm,
+                decoration: InputDecoration(
+                  labelText: 'Ulangi password baru',
+                  prefixIcon: const Icon(Icons.lock_outline),
+                  suffixIcon: IconButton(
+                    onPressed: () {
+                      setState(() {
+                        obscureConfirm = !obscureConfirm;
+                      });
+                    },
+                    icon: Icon(
+                      obscureConfirm
+                          ? Icons.visibility
+                          : Icons.visibility_off,
+                    ),
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 25),
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton(
+                  onPressed: loading ? null : updatePassword,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: loading
+                      ? const CircularProgressIndicator(
+                          color: Colors.white,
+                        )
+                      : const Text('SIMPAN PASSWORD BARU'),
                 ),
               ),
             ],
@@ -278,7 +533,6 @@ class _ProductPageState extends State<ProductPage> {
   final searchController = TextEditingController();
 
   late Future<List<Map<String, dynamic>>> productsFuture;
-
   String searchQuery = '';
 
   @override
@@ -350,7 +604,6 @@ class _ProductPageState extends State<ProductPage> {
           ),
         ],
       ),
-
       body: Column(
         children: [
           Padding(
@@ -380,13 +633,11 @@ class _ProductPageState extends State<ProductPage> {
               ),
             ),
           ),
-
           Expanded(
             child: FutureBuilder<List<Map<String, dynamic>>>(
               future: productsFuture,
               builder: (context, snapshot) {
-                if (snapshot.connectionState ==
-                    ConnectionState.waiting) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(
                     child: CircularProgressIndicator(),
                   );
@@ -421,7 +672,6 @@ class _ProductPageState extends State<ProductPage> {
                   final name = (product['name'] ?? '')
                       .toString()
                       .toLowerCase();
-
                   final category = (product['category'] ?? '')
                       .toString()
                       .toLowerCase();
@@ -439,8 +689,7 @@ class _ProductPageState extends State<ProductPage> {
                 return RefreshIndicator(
                   onRefresh: refreshProducts,
                   child: GridView.builder(
-                    physics:
-                        const AlwaysScrollableScrollPhysics(),
+                    physics: const AlwaysScrollableScrollPhysics(),
                     padding: const EdgeInsets.all(12),
                     itemCount: filtered.length,
                     gridDelegate:
@@ -469,8 +718,7 @@ class _ProductPageState extends State<ProductPage> {
                         child: Card(
                           clipBehavior: Clip.antiAlias,
                           child: Column(
-                            crossAxisAlignment:
-                                CrossAxisAlignment.start,
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Expanded(
                                 child: SizedBox(
@@ -516,9 +764,7 @@ class _ProductPageState extends State<ProductPage> {
                                     const SizedBox(height: 4),
                                     Text(
                                       'Stok: ${product['stock']}',
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                      ),
+                                      style: const TextStyle(fontSize: 12),
                                     ),
                                     const SizedBox(height: 5),
                                     const Text(
@@ -579,18 +825,16 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
   Future<void> buyNow() async {
     if (supabase.auth.currentUser == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Silakan login terlebih dahulu')),
+        const SnackBar(
+          content: Text('Silakan login terlebih dahulu'),
+        ),
       );
       return;
     }
 
-    final productId = int.tryParse(
-      widget.product['id'].toString(),
-    );
+    final productId = int.tryParse(widget.product['id'].toString());
 
-    if (productId == null) {
-      return;
-    }
+    if (productId == null) return;
 
     if ((widget.product['stock'] as num? ?? 0) <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -616,12 +860,10 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
 
       if (!mounted) return;
 
-      final orderId = result.toString();
-
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Pesanan berhasil dibuat! ID: $orderId',
+            'Pesanan berhasil dibuat! ID: ${result.toString()}',
           ),
           backgroundColor: Colors.green,
         ),
@@ -644,9 +886,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
         SnackBar(content: Text('Kesalahan: $e')),
       );
     } finally {
-      if (mounted) {
-        setState(() => purchasing = false);
-      }
+      if (mounted) setState(() => purchasing = false);
     }
   }
 
@@ -673,11 +913,13 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                       imageUrl,
                       fit: BoxFit.contain,
                       errorBuilder: (_, __, ___) =>
-                          const Icon(Icons.image_not_supported, size: 90),
+                          const Icon(
+                        Icons.image_not_supported,
+                        size: 90,
+                      ),
                     )
                   : const Icon(Icons.shopping_bag, size: 90),
             ),
-
             Padding(
               padding: const EdgeInsets.all(18),
               child: Column(
@@ -690,9 +932,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-
                   const SizedBox(height: 12),
-
                   Text(
                     formatRupiah(product['price']),
                     style: const TextStyle(
@@ -701,25 +941,19 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-
                   const Divider(height: 30),
-
                   const Text(
                     'Kategori',
                     style: TextStyle(fontWeight: FontWeight.bold),
                   ),
                   Text(product['category']?.toString() ?? '-'),
-
                   const SizedBox(height: 20),
-
                   const Text(
                     'Stok Produk',
                     style: TextStyle(fontWeight: FontWeight.bold),
                   ),
                   Text('${product['stock'] ?? 0} tersedia'),
-
                   const SizedBox(height: 20),
-
                   const Text(
                     'Deskripsi Produk',
                     style: TextStyle(
@@ -727,16 +961,12 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-
                   const SizedBox(height: 8),
-
                   Text(
                     product['description']?.toString() ??
                         'Belum ada deskripsi produk.',
                   ),
-
                   const SizedBox(height: 30),
-
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
@@ -759,9 +989,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.green,
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                          vertical: 15,
-                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 15),
                       ),
                     ),
                   ),
