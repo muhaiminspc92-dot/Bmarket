@@ -4,5 +4,5 @@ class SupabaseConfig {
       'https://lldbmljqgfaxsgelkdam.supabase.co';
 
   static const String supabaseAnonKey =
-      'MASUKKAN_PUBLISHABLE_KEY_SUPABASE';
+      'sb_publishable_K6e8FZBchvSQV08N1RFxTQ_N9GoPdX1';
 }
