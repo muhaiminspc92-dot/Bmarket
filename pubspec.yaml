@@ -1,3 +1,4 @@
+
 name: bmarket
 description: Aplikasi marketplace Android Bmarket
 publish_to: 'none'
@@ -10,7 +11,6 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-
   cupertino_icons: ^1.0.8
   supabase_flutter: ^2.8.0
 
@@ -21,3 +21,4 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
