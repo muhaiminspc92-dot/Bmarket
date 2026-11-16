@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'supabase_config.dart';
 
+final supabase = Supabase.instance.client;
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -26,10 +28,244 @@ class BmarketApp extends StatelessWidget {
         colorSchemeSeed: Colors.green,
         scaffoldBackgroundColor: Colors.white,
       ),
-      home: const ProductPage(),
+      home: const AuthGate(),
     );
   }
 }
+
+// ========================================
+// AUTH GATE
+// ========================================
+
+class AuthGate extends StatelessWidget {
+  const AuthGate({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<AuthState>(
+      stream: supabase.auth.onAuthStateChange,
+      builder: (context, snapshot) {
+        final session =
+            snapshot.data?.session ?? supabase.auth.currentSession;
+
+        if (session == null) {
+          return const LoginPage();
+        }
+
+        return const ProductPage();
+      },
+    );
+  }
+}
+
+// ========================================
+// LOGIN DAN REGISTER
+// ========================================
+
+class LoginPage extends StatefulWidget {
+  const LoginPage({super.key});
+
+  @override
+  State<LoginPage> createState() => _LoginPageState();
+}
+
+class _LoginPageState extends State<LoginPage> {
+  final emailController = TextEditingController();
+  final passwordController = TextEditingController();
+
+  bool isRegister = false;
+  bool loading = false;
+  bool obscurePassword = true;
+
+  Future<void> authenticate() async {
+    final email = emailController.text.trim();
+    final password = passwordController.text;
+
+    if (email.isEmpty || password.isEmpty) {
+      showMessage('Email dan password wajib diisi');
+      return;
+    }
+
+    if (!email.contains('@')) {
+      showMessage('Format email tidak valid');
+      return;
+    }
+
+    if (password.length < 6) {
+      showMessage('Password minimal 6 karakter');
+      return;
+    }
+
+    setState(() => loading = true);
+
+    try {
+      if (isRegister) {
+        final response = await supabase.auth.signUp(
+          email: email,
+          password: password,
+        );
+
+        if (response.session == null) {
+          showMessage(
+            'Pendaftaran berhasil. Periksa email untuk verifikasi, lalu login.',
+          );
+        } else {
+          showMessage('Pendaftaran berhasil');
+        }
+      } else {
+        await supabase.auth.signInWithPassword(
+          email: email,
+          password: password,
+        );
+
+        showMessage('Login berhasil');
+      }
+    } on AuthException catch (e) {
+      showMessage(e.message);
+    } catch (e) {
+      showMessage('Terjadi kesalahan: $e');
+    } finally {
+      if (mounted) {
+        setState(() => loading = false);
+      }
+    }
+  }
+
+  void showMessage(String message) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  @override
+  void dispose() {
+    emailController.dispose();
+    passwordController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(25),
+          child: Column(
+            children: [
+              const Icon(
+                Icons.shopping_bag,
+                size: 85,
+                color: Colors.green,
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Bmarket',
+                style: TextStyle(
+                  fontSize: 32,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.green,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                isRegister
+                    ? 'Buat akun Bmarket'
+                    : 'Selamat datang kembali!',
+                style: const TextStyle(fontSize: 18),
+              ),
+              const SizedBox(height: 35),
+
+              TextField(
+                controller: emailController,
+                keyboardType: TextInputType.emailAddress,
+                decoration: InputDecoration(
+                  labelText: 'Email',
+                  prefixIcon: const Icon(Icons.email),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 15),
+
+              TextField(
+                controller: passwordController,
+                obscureText: obscurePassword,
+                decoration: InputDecoration(
+                  labelText: 'Password',
+                  prefixIcon: const Icon(Icons.lock),
+                  suffixIcon: IconButton(
+                    onPressed: () {
+                      setState(() {
+                        obscurePassword = !obscurePassword;
+                      });
+                    },
+                    icon: Icon(
+                      obscurePassword
+                          ? Icons.visibility
+                          : Icons.visibility_off,
+                    ),
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 25),
+
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton(
+                  onPressed: loading ? null : authenticate,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: loading
+                      ? const CircularProgressIndicator(
+                          color: Colors.white,
+                        )
+                      : Text(
+                          isRegister ? 'DAFTAR' : 'LOGIN',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                ),
+              ),
+
+              const SizedBox(height: 15),
+
+              TextButton(
+                onPressed: loading
+                    ? null
+                    : () {
+                        setState(() {
+                          isRegister = !isRegister;
+                        });
+                      },
+                child: Text(
+                  isRegister
+                      ? 'Sudah punya akun? Login'
+                      : 'Belum punya akun? Daftar sekarang',
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ========================================
+// HALAMAN PRODUK
+// ========================================
 
 class ProductPage extends StatefulWidget {
   const ProductPage({super.key});
@@ -39,8 +275,7 @@ class ProductPage extends StatefulWidget {
 }
 
 class _ProductPageState extends State<ProductPage> {
-  final TextEditingController searchController =
-      TextEditingController();
+  final searchController = TextEditingController();
 
   late Future<List<Map<String, dynamic>>> productsFuture;
 
@@ -59,7 +294,7 @@ class _ProductPageState extends State<ProductPage> {
   }
 
   Future<List<Map<String, dynamic>>> loadProducts() async {
-    final result = await Supabase.instance.client
+    final result = await supabase
         .from('products')
         .select(
           'id, seller_id, name, description, category, price, stock, image_url, is_active, created_at, updated_at',
@@ -82,14 +317,15 @@ class _ProductPageState extends State<ProductPage> {
 
   String formatRupiah(dynamic value) {
     final number = int.tryParse(value.toString()) ?? 0;
-    final text = number.toString();
 
-    final formatted = text.replaceAllMapped(
+    return 'Rp ${number.toString().replaceAllMapped(
       RegExp(r'\B(?=(\d{3})+(?!\d))'),
       (match) => '.',
-    );
+    )}';
+  }
 
-    return 'Rp $formatted';
+  Future<void> logout() async {
+    await supabase.auth.signOut();
   }
 
   @override
@@ -100,22 +336,23 @@ class _ProductPageState extends State<ProductPage> {
         foregroundColor: Colors.white,
         title: const Text(
           'Bmarket',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-          ),
+          style: TextStyle(fontWeight: FontWeight.bold),
         ),
         actions: [
           IconButton(
             onPressed: refreshProducts,
             icon: const Icon(Icons.refresh),
-            tooltip: 'Muat ulang',
+          ),
+          IconButton(
+            onPressed: logout,
+            icon: const Icon(Icons.logout),
+            tooltip: 'Keluar',
           ),
         ],
       ),
 
       body: Column(
         children: [
-          // PENCARIAN PRODUK
           Padding(
             padding: const EdgeInsets.all(12),
             child: TextField(
@@ -131,9 +368,7 @@ class _ProductPageState extends State<ProductPage> {
                 suffixIcon: IconButton(
                   onPressed: () {
                     searchController.clear();
-                    setState(() {
-                      searchQuery = '';
-                    });
+                    setState(() => searchQuery = '');
                   },
                   icon: const Icon(Icons.close),
                 ),
@@ -146,12 +381,10 @@ class _ProductPageState extends State<ProductPage> {
             ),
           ),
 
-          // DAFTAR PRODUK
           Expanded(
             child: FutureBuilder<List<Map<String, dynamic>>>(
               future: productsFuture,
               builder: (context, snapshot) {
-
                 if (snapshot.connectionState ==
                     ConnectionState.waiting) {
                   return const Center(
@@ -168,27 +401,13 @@ class _ProductPageState extends State<ProductPage> {
                         children: [
                           const Icon(
                             Icons.error_outline,
-                            size: 55,
+                            size: 50,
                             color: Colors.red,
                           ),
-                          const SizedBox(height: 12),
-                          const Text(
-                            'Gagal mengambil produk',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            '${snapshot.error}',
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: 15),
-                          ElevatedButton.icon(
+                          Text('${snapshot.error}'),
+                          ElevatedButton(
                             onPressed: refreshProducts,
-                            icon: const Icon(Icons.refresh),
-                            label: const Text('Coba Lagi'),
+                            child: const Text('Coba Lagi'),
                           ),
                         ],
                       ),
@@ -198,39 +417,22 @@ class _ProductPageState extends State<ProductPage> {
 
                 final products = snapshot.data ?? [];
 
-                final filteredProducts = products.where((product) {
-                  final name =
-                      (product['name'] ?? '').toString().toLowerCase();
+                final filtered = products.where((product) {
+                  final name = (product['name'] ?? '')
+                      .toString()
+                      .toLowerCase();
 
-                  final category =
-                      (product['category'] ?? '').toString().toLowerCase();
+                  final category = (product['category'] ?? '')
+                      .toString()
+                      .toLowerCase();
 
                   return name.contains(searchQuery) ||
                       category.contains(searchQuery);
                 }).toList();
 
-                if (filteredProducts.isEmpty) {
-                  return RefreshIndicator(
-                    onRefresh: refreshProducts,
-                    child: ListView(
-                      physics:
-                          const AlwaysScrollableScrollPhysics(),
-                      children: [
-                        const SizedBox(height: 120),
-                        Icon(
-                          Icons.shopping_bag_outlined,
-                          size: 75,
-                          color: Colors.grey.shade400,
-                        ),
-                        const SizedBox(height: 15),
-                        const Center(
-                          child: Text(
-                            'Belum ada produk tersedia',
-                            style: TextStyle(fontSize: 16),
-                          ),
-                        ),
-                      ],
-                    ),
+                if (filtered.isEmpty) {
+                  return const Center(
+                    child: Text('Belum ada produk tersedia'),
                   );
                 }
 
@@ -240,7 +442,7 @@ class _ProductPageState extends State<ProductPage> {
                     physics:
                         const AlwaysScrollableScrollPhysics(),
                     padding: const EdgeInsets.all(12),
-                    itemCount: filteredProducts.length,
+                    itemCount: filtered.length,
                     gridDelegate:
                         const SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 2,
@@ -249,32 +451,23 @@ class _ProductPageState extends State<ProductPage> {
                       childAspectRatio: 0.68,
                     ),
                     itemBuilder: (context, index) {
-                      final product = filteredProducts[index];
-
+                      final product = filtered[index];
                       final imageUrl =
                           product['image_url']?.toString() ?? '';
 
-                      final price = product['price'] ?? 0;
-
                       return InkWell(
-                        borderRadius: BorderRadius.circular(12),
-
-                        // KLIK PRODUK
                         onTap: () {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (context) =>
-                                  ProductDetailPage(
+                              builder: (_) => ProductDetailPage(
                                 product: product,
                               ),
                             ),
-                          );
+                          ).then((_) => refreshProducts());
                         },
-
                         child: Card(
                           clipBehavior: Clip.antiAlias,
-                          elevation: 2,
                           child: Column(
                             crossAxisAlignment:
                                 CrossAxisAlignment.start,
@@ -286,13 +479,11 @@ class _ProductPageState extends State<ProductPage> {
                                       ? Image.network(
                                           imageUrl,
                                           fit: BoxFit.cover,
-                                          errorBuilder:
-                                              (context, error, stack) {
-                                            return const Icon(
-                                              Icons.image_not_supported,
-                                              size: 50,
-                                            );
-                                          },
+                                          errorBuilder: (_, __, ___) =>
+                                              const Icon(
+                                            Icons.image_not_supported,
+                                            size: 50,
+                                          ),
                                         )
                                       : const Icon(
                                           Icons.shopping_bag,
@@ -300,7 +491,6 @@ class _ProductPageState extends State<ProductPage> {
                                         ),
                                 ),
                               ),
-
                               Padding(
                                 padding: const EdgeInsets.all(10),
                                 child: Column(
@@ -308,51 +498,35 @@ class _ProductPageState extends State<ProductPage> {
                                       CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      product['name']?.toString() ?? '',
+                                      product['name'].toString(),
                                       maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
                                       style: const TextStyle(
                                         fontWeight: FontWeight.bold,
                                       ),
                                     ),
-
                                     const SizedBox(height: 5),
-
                                     Text(
-                                      formatRupiah(price),
+                                      formatRupiah(product['price']),
                                       style: const TextStyle(
                                         color: Colors.green,
                                         fontWeight: FontWeight.bold,
                                       ),
                                     ),
-
                                     const SizedBox(height: 4),
-
                                     Text(
-                                      'Stok: ${product['stock'] ?? 0}',
+                                      'Stok: ${product['stock']}',
                                       style: const TextStyle(
                                         fontSize: 12,
                                       ),
                                     ),
-
                                     const SizedBox(height: 5),
-
-                                    const Row(
-                                      children: [
-                                        Icon(
-                                          Icons.touch_app,
-                                          size: 15,
-                                          color: Colors.green,
-                                        ),
-                                        SizedBox(width: 4),
-                                        Text(
-                                          'Lihat detail',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            color: Colors.green,
-                                          ),
-                                        ),
-                                      ],
+                                    const Text(
+                                      'Lihat detail →',
+                                      style: TextStyle(
+                                        color: Colors.green,
+                                        fontSize: 12,
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -374,10 +548,10 @@ class _ProductPageState extends State<ProductPage> {
 }
 
 // ========================================
-// HALAMAN DETAIL PRODUK
+// DETAIL PRODUK DAN CHECKOUT
 // ========================================
 
-class ProductDetailPage extends StatelessWidget {
+class ProductDetailPage extends StatefulWidget {
   final Map<String, dynamic> product;
 
   const ProductDetailPage({
@@ -385,21 +559,101 @@ class ProductDetailPage extends StatelessWidget {
     required this.product,
   });
 
+  @override
+  State<ProductDetailPage> createState() =>
+      _ProductDetailPageState();
+}
+
+class _ProductDetailPageState extends State<ProductDetailPage> {
+  bool purchasing = false;
+
   String formatRupiah(dynamic value) {
     final number = int.tryParse(value.toString()) ?? 0;
 
-    final formatted = number.toString().replaceAllMapped(
+    return 'Rp ${number.toString().replaceAllMapped(
       RegExp(r'\B(?=(\d{3})+(?!\d))'),
       (match) => '.',
+    )}';
+  }
+
+  Future<void> buyNow() async {
+    if (supabase.auth.currentUser == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Silakan login terlebih dahulu')),
+      );
+      return;
+    }
+
+    final productId = int.tryParse(
+      widget.product['id'].toString(),
     );
 
-    return 'Rp $formatted';
+    if (productId == null) {
+      return;
+    }
+
+    if ((widget.product['stock'] as num? ?? 0) <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Stok produk habis')),
+      );
+      return;
+    }
+
+    setState(() => purchasing = true);
+
+    try {
+      final result = await supabase.rpc(
+        'bmarket_checkout',
+        params: {
+          'p_items': [
+            {
+              'product_id': productId,
+              'quantity': 1,
+            }
+          ],
+        },
+      );
+
+      if (!mounted) return;
+
+      final orderId = result.toString();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Pesanan berhasil dibuat! ID: $orderId',
+          ),
+          backgroundColor: Colors.green,
+        ),
+      );
+
+      Navigator.pop(context);
+    } on PostgrestException catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Checkout gagal: ${e.message}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Kesalahan: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => purchasing = false);
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final imageUrl =
-        product['image_url']?.toString() ?? '';
+    final product = widget.product;
+    final imageUrl = product['image_url']?.toString() ?? '';
 
     return Scaffold(
       appBar: AppBar(
@@ -407,13 +661,10 @@ class ProductDetailPage extends StatelessWidget {
         backgroundColor: Colors.green,
         foregroundColor: Colors.white,
       ),
-
       body: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-
-            // FOTO PRODUK
             SizedBox(
               width: double.infinity,
               height: 300,
@@ -421,17 +672,10 @@ class ProductDetailPage extends StatelessWidget {
                   ? Image.network(
                       imageUrl,
                       fit: BoxFit.contain,
-                      errorBuilder: (context, error, stack) {
-                        return const Icon(
-                          Icons.image_not_supported,
-                          size: 90,
-                        );
-                      },
+                      errorBuilder: (_, __, ___) =>
+                          const Icon(Icons.image_not_supported, size: 90),
                     )
-                  : const Icon(
-                      Icons.shopping_bag,
-                      size: 90,
-                    ),
+                  : const Icon(Icons.shopping_bag, size: 90),
             ),
 
             Padding(
@@ -439,8 +683,6 @@ class ProductDetailPage extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-
-                  // NAMA
                   Text(
                     product['name']?.toString() ?? '',
                     style: const TextStyle(
@@ -451,9 +693,8 @@ class ProductDetailPage extends StatelessWidget {
 
                   const SizedBox(height: 12),
 
-                  // HARGA
                   Text(
-                    formatRupiah(product['price'] ?? 0),
+                    formatRupiah(product['price']),
                     style: const TextStyle(
                       fontSize: 25,
                       color: Colors.green,
@@ -463,46 +704,27 @@ class ProductDetailPage extends StatelessWidget {
 
                   const Divider(height: 30),
 
-                  // KATEGORI
                   const Text(
                     'Kategori',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
+                    style: TextStyle(fontWeight: FontWeight.bold),
                   ),
-
-                  const SizedBox(height: 5),
-
-                  Text(
-                    product['category']?.toString() ?? '-',
-                  ),
+                  Text(product['category']?.toString() ?? '-'),
 
                   const SizedBox(height: 20),
 
-                  // STOK
                   const Text(
                     'Stok Produk',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
+                    style: TextStyle(fontWeight: FontWeight.bold),
                   ),
-
-                  const SizedBox(height: 5),
-
-                  Text(
-                    '${product['stock'] ?? 0} tersedia',
-                  ),
+                  Text('${product['stock'] ?? 0} tersedia'),
 
                   const SizedBox(height: 20),
 
-                  // DESKRIPSI
                   const Text(
                     'Deskripsi Produk',
                     style: TextStyle(
-                      fontWeight: FontWeight.bold,
                       fontSize: 18,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
 
@@ -511,29 +733,29 @@ class ProductDetailPage extends StatelessWidget {
                   Text(
                     product['description']?.toString() ??
                         'Belum ada deskripsi produk.',
-                    style: const TextStyle(
-                      fontSize: 15,
-                      height: 1.5,
-                    ),
                   ),
 
                   const SizedBox(height: 30),
 
-                  // TOMBOL
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
-                      onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Fitur pembelian akan segera tersedia.',
-                            ),
-                          ),
-                        );
-                      },
-                      icon: const Icon(Icons.shopping_cart),
-                      label: const Text('Beli Sekarang'),
+                      onPressed: purchasing ? null : buyNow,
+                      icon: purchasing
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.shopping_cart),
+                      label: Text(
+                        purchasing
+                            ? 'Memproses...'
+                            : 'Beli Sekarang',
+                      ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.green,
                         foregroundColor: Colors.white,
