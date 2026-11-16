@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'supabase_config.dart';
@@ -6,24 +5,16 @@ import 'supabase_config.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  bool connected = false;
+  await Supabase.initialize(
+    url: SupabaseConfig.supabaseUrl,
+    anonKey: SupabaseConfig.supabaseAnonKey,
+  );
 
-  if (SupabaseConfig.supabaseUrl.isNotEmpty &&
-      SupabaseConfig.supabaseAnonKey.isNotEmpty) {
-    await Supabase.initialize(
-      url: SupabaseConfig.supabaseUrl,
-      anonKey: SupabaseConfig.supabaseAnonKey,
-    );
-    connected = true;
-  }
-
-  runApp(BmarketApp(connected: connected));
+  runApp(const BmarketApp());
 }
 
 class BmarketApp extends StatelessWidget {
-  final bool connected;
-
-  const BmarketApp({super.key, required this.connected});
+  const BmarketApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -31,130 +22,49 @@ class BmarketApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'Bmarket',
       theme: ThemeData(
-        colorSchemeSeed: Colors.deepOrange,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.green,
+        ),
         useMaterial3: true,
       ),
-      home: HomePage(connected: connected),
+      home: const ProductPage(),
     );
   }
 }
 
-class HomePage extends StatefulWidget {
-  final bool connected;
-
-  const HomePage({super.key, required this.connected});
+class ProductPage extends StatefulWidget {
+  const ProductPage({super.key});
 
   @override
-  State<HomePage> createState() => _HomePageState();
+  State<ProductPage> createState() => _ProductPageState();
 }
 
-class _HomePageState extends State<HomePage> {
-  final searchController = TextEditingController();
-
-  List<Map<String, dynamic>> products = [];
-  List<Map<String, dynamic>> filteredProducts = [];
-  bool loading = true;
-  String errorMessage = '';
+class _ProductPageState extends State<ProductPage> {
+  late Future<List<Map<String, dynamic>>> productsFuture;
 
   @override
   void initState() {
     super.initState();
-    loadProducts();
+    productsFuture = getProducts();
   }
 
-  Future<void> loadProducts() async {
-    if (!widget.connected) {
-      setState(() {
-        loading = false;
-        errorMessage = 'Supabase belum dikonfigurasi.';
-      });
-      return;
-    }
+  Future<List<Map<String, dynamic>>> getProducts() async {
+    final response = await Supabase.instance.client
+        .from('products')
+        .select(
+          'id, seller_id, name, description, category, '
+          'price, stock, image_url, is_active, created_at, updated_at',
+        )
+        .eq('is_active', true)
+        .order('id', ascending: false);
 
-    try {
-      final result = await Supabase.instance.client
-          .from('products')
-          .select('id,name,seller,description,price,image_url,stock')
-          .order('id', ascending: false);
-
-      setState(() {
-        products = List<Map<String, dynamic>>.from(result);
-        filteredProducts = products;
-        loading = false;
-        errorMessage = '';
-      });
-    } catch (e) {
-      setState(() {
-        loading = false;
-        errorMessage = 'Gagal mengambil produk: $e';
-      });
-    }
+    return List<Map<String, dynamic>>.from(response);
   }
 
-  void searchProducts(String value) {
+  void refreshProducts() {
     setState(() {
-      filteredProducts = products.where((product) {
-        final name = (product['name'] ?? '').toString().toLowerCase();
-        final seller = (product['seller'] ?? '').toString().toLowerCase();
-        final query = value.toLowerCase();
-
-        return name.contains(query) || seller.contains(query);
-      }).toList();
+      productsFuture = getProducts();
     });
-  }
-
-  String formatPrice(dynamic price) {
-    final number = double.tryParse(price.toString()) ?? 0;
-    return 'Rp ${number.toStringAsFixed(0)}';
-  }
-
-  void showProduct(Map<String, dynamic> product) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) {
-        return Padding(
-          padding: const EdgeInsets.all(20),
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  product['name']?.toString() ?? 'Produk',
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  formatPrice(product['price']),
-                  style: const TextStyle(
-                    fontSize: 20,
-                    color: Colors.deepOrange,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text('Penjual: ${product['seller'] ?? '-'}'),
-                const SizedBox(height: 12),
-                Text(product['description']?.toString() ??
-                    'Belum ada deskripsi'),
-                const SizedBox(height: 12),
-                Text('Stok: ${product['stock'] ?? 0}'),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  @override
-  void dispose() {
-    searchController.dispose();
-    super.dispose();
   }
 
   @override
@@ -163,139 +73,170 @@ class _HomePageState extends State<HomePage> {
       appBar: AppBar(
         title: const Text(
           'Bmarket',
-          style: TextStyle(fontWeight: FontWeight.bold),
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
         ),
-        backgroundColor: Colors.deepOrange,
-        foregroundColor: Colors.white,
+        backgroundColor: Colors.green,
         actions: [
           IconButton(
-            onPressed: loadProducts,
-            icon: const Icon(Icons.refresh),
+            onPressed: refreshProducts,
+            icon: const Icon(
+              Icons.refresh,
+              color: Colors.white,
+            ),
           ),
         ],
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: TextField(
-              controller: searchController,
-              onChanged: searchProducts,
-              decoration: InputDecoration(
-                hintText: 'Cari produk...',
-                prefixIcon: const Icon(Icons.search),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
+      body: FutureBuilder<List<Map<String, dynamic>>>(
+        future: productsFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: CircularProgressIndicator(),
+            );
+          }
+
+          if (snapshot.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.error_outline,
+                      color: Colors.red,
+                      size: 50,
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Gagal mengambil produk',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '${snapshot.error}',
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton.icon(
+                      onPressed: refreshProducts,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Coba Lagi'),
+                    ),
+                  ],
                 ),
               ),
-            ),
-          ),
-          Expanded(
-            child: loading
-                ? const Center(child: CircularProgressIndicator())
-                : errorMessage.isNotEmpty
-                    ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(20),
-                          child: Text(errorMessage),
-                        ),
-                      )
-                    : filteredProducts.isEmpty
-                        ? const Center(
-                            child: Text('Belum ada produk tersedia'),
-                          )
-                        : RefreshIndicator(
-                            onRefresh: loadProducts,
-                            child: GridView.builder(
-                              padding: const EdgeInsets.all(10),
-                              itemCount: filteredProducts.length,
-                              gridDelegate:
-                                  const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 2,
-                                childAspectRatio: 0.75,
-                                crossAxisSpacing: 10,
-                                mainAxisSpacing: 10,
-                              ),
-                              itemBuilder: (context, index) {
-                                final product = filteredProducts[index];
-                                final imageUrl =
-                                    product['image_url']?.toString() ?? '';
+            );
+          }
 
-                                return Card(
-                                  clipBehavior: Clip.antiAlias,
-                                  child: InkWell(
-                                    onTap: () => showProduct(product),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Expanded(
-                                          child: SizedBox(
-                                            width: double.infinity,
-                                            child: imageUrl.isNotEmpty
-                                                ? Image.network(
-                                                    imageUrl,
-                                                    fit: BoxFit.cover,
-                                                    errorBuilder: (
-                                                      context,
-                                                      error,
-                                                      stackTrace,
-                                                    ) {
-                                                      return const Icon(
-                                                        Icons.image,
-                                                        size: 55,
-                                                      );
-                                                    },
-                                                  )
-                                                : const Icon(
-                                                    Icons.shopping_bag,
-                                                    size: 55,
-                                                  ),
-                                          ),
-                                        ),
-                                        Padding(
-                                          padding: const EdgeInsets.all(9),
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                product['name']?.toString() ??
-                                                    'Produk',
-                                                maxLines: 2,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.bold,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 5),
-                                              Text(
-                                                formatPrice(product['price']),
-                                                style: const TextStyle(
-                                                  color: Colors.deepOrange,
-                                                  fontWeight: FontWeight.bold,
-                                                ),
-                                              ),
-                                              Text(
-                                                'Penjual: ${product['seller'] ?? '-'}',
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: const TextStyle(
-                                                  fontSize: 11,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              },
+          final products = snapshot.data ?? [];
+
+          if (products.isEmpty) {
+            return const Center(
+              child: Text(
+                'Belum ada produk tersedia',
+                style: TextStyle(fontSize: 16),
+              ),
+            );
+          }
+
+          return RefreshIndicator(
+            onRefresh: () async {
+              refreshProducts();
+              await productsFuture;
+            },
+            child: GridView.builder(
+              padding: const EdgeInsets.all(12),
+              itemCount: products.length,
+              gridDelegate:
+                  const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+                childAspectRatio: 0.68,
+              ),
+              itemBuilder: (context, index) {
+                final product = products[index];
+
+                final imageUrl =
+                    product['image_url']?.toString() ?? '';
+
+                final price =
+                    product['price'] ?? 0;
+
+                return Card(
+                  clipBehavior: Clip.antiAlias,
+                  elevation: 2,
+                  child: Column(
+                    crossAxisAlignment:
+                        CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: imageUrl.isNotEmpty
+                              ? Image.network(
+                                  imageUrl,
+                                  fit: BoxFit.cover,
+                                  errorBuilder:
+                                      (context, error, stack) {
+                                    return const Icon(
+                                      Icons.image_not_supported,
+                                      size: 50,
+                                    );
+                                  },
+                                )
+                              : const Icon(
+                                  Icons.shopping_bag,
+                                  size: 50,
+                                ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(10),
+                        child: Column(
+                          crossAxisAlignment:
+                              CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              product['name']?.toString() ?? '',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
-                          ),
-          ),
-        ],
+                            const SizedBox(height: 5),
+                            Text(
+                              'Rp ${price.toString()}',
+                              style: const TextStyle(
+                                color: Colors.green,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Stok: ${product['stock']}',
+                              style: const TextStyle(
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          );
+        },
       ),
     );
   }
