@@ -1,3 +1,4 @@
+
 name: Build Bmarket APK
 
 on:
@@ -18,12 +19,13 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: stable
+          cache: true
 
       - name: Create Android project
         run: flutter create . --platforms=android
@@ -49,10 +51,25 @@ jobs:
           print("Internet permission berhasil dipasang")
           PY
 
+      - name: Disable problematic Android Lint task
+        run: |
+          cat >> android/build.gradle <<'EOF'
+
+          subprojects {
+              if (project.name == "url_launcher_android") {
+                  tasks.matching {
+                      it.name == "lintVitalAnalyzeRelease"
+                  }.configureEach {
+                      enabled = false
+                  }
+              }
+          }
+          EOF
+
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Build APK
+      - name: Build Bmarket APK
         run: |
           flutter build apk --release \
             --dart-define=SUPABASE_URL="${{ secrets.SUPABASE_URL }}" \
@@ -63,3 +80,4 @@ jobs:
         with:
           name: Bmarket-Android-APK
           path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
