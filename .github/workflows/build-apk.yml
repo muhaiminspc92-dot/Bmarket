@@ -18,7 +18,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: '17'
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -27,6 +27,27 @@ jobs:
 
       - name: Create Android project
         run: flutter create . --platforms=android
+
+      - name: Add Internet Permission
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("android/app/src/main/AndroidManifest.xml")
+          content = path.read_text()
+
+          permission = '<uses-permission android:name="android.permission.INTERNET"/>'
+
+          if permission not in content:
+              content = content.replace(
+                  '<application',
+                  permission + '\n    <application',
+                  1
+              )
+
+          path.write_text(content)
+          print("Internet permission berhasil dipasang")
+          PY
 
       - name: Install dependencies
         run: flutter pub get
