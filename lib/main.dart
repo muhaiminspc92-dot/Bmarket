@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'supabase_config.dart';
+import 'order_history_page.dart';
 
 final supabase = Supabase.instance.client;
 
@@ -596,6 +597,18 @@ class _ProductPageState extends State<ProductPage> {
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
         actions: [
+          IconButton(
+  tooltip: 'Riwayat Pesanan',
+  icon: const Icon(Icons.receipt_long_outlined),
+  onPressed: () {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const OrderHistoryPage(),
+      ),
+    );
+  },
+),
           IconButton(
             onPressed: refreshProducts,
             icon: const Icon(Icons.refresh),
