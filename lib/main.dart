@@ -800,6 +800,7 @@ class _ProductPageState extends State<ProductPage> {
 // DETAIL PRODUK DAN CHECKOUT
 // ========================================
 
+
 class ProductDetailPage extends StatefulWidget {
   final Map<String, dynamic> product;
 
@@ -815,6 +816,7 @@ class ProductDetailPage extends StatefulWidget {
 
 class _ProductDetailPageState extends State<ProductDetailPage> {
   bool purchasing = false;
+  int quantity = 1;
 
   String formatRupiah(dynamic value) {
     final number = int.tryParse(value.toString()) ?? 0;
@@ -835,18 +837,40 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
       return;
     }
 
-    final productId = int.tryParse(widget.product['id'].toString());
+    final productId = int.tryParse(
+      widget.product['id'].toString(),
+    );
 
-    if (productId == null) return;
-
-    if ((widget.product['stock'] as num? ?? 0) <= 0) {
+    if (productId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Stok produk habis')),
+        const SnackBar(
+          content: Text('ID produk tidak valid'),
+        ),
       );
       return;
     }
 
-    setState(() => purchasing = true);
+    final stock = int.tryParse(
+          (widget.product['stock'] ?? 0).toString(),
+        ) ??
+        0;
+
+    if (stock <= 0 || quantity > stock) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            stock <= 0
+                ? 'Stok produk habis'
+                : 'Stok hanya tersedia $stock',
+          ),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      purchasing = true;
+    });
 
     try {
       final result = await supabase.rpc(
@@ -855,7 +879,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
           'p_items': [
             {
               'product_id': productId,
-              'quantity': 1,
+              'quantity': quantity,
             }
           ],
         },
@@ -886,17 +910,36 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Kesalahan: $e')),
+        SnackBar(
+          content: Text('Kesalahan: $e'),
+          backgroundColor: Colors.red,
+        ),
       );
     } finally {
-      if (mounted) setState(() => purchasing = false);
+      if (mounted) {
+        setState(() {
+          purchasing = false;
+        });
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final product = widget.product;
-    final imageUrl = product['image_url']?.toString() ?? '';
+
+    final imageUrl =
+        product['image_url']?.toString() ?? '';
+
+    final stock = int.tryParse(
+          (product['stock'] ?? 0).toString(),
+        ) ??
+        0;
+
+    final price = int.tryParse(
+          (product['price'] ?? 0).toString(),
+        ) ??
+        0;
 
     return Scaffold(
       appBar: AppBar(
@@ -921,10 +964,14 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                         size: 90,
                       ),
                     )
-                  : const Icon(Icons.shopping_bag, size: 90),
+                  : const Icon(
+                      Icons.shopping_bag,
+                      size: 90,
+                    ),
             ),
+
             Padding(
-              padding: const EdgeInsets.all(18),
+              padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -935,64 +982,94 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
+
                   const SizedBox(height: 12),
+
                   Text(
-                    formatRupiah(product['price']),
+                    formatRupiah(price),
                     style: const TextStyle(
-                      fontSize: 25,
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
                       color: Colors.green,
+                    ),
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  const Text(
+                    'Stok Produk',
+                    style: TextStyle(
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  const Divider(height: 30),
-                  const Text(
-                    'Kategori',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  Text(product['category']?.toString() ?? '-'),
+
+                  Text('$stock tersedia'),
+
                   const SizedBox(height: 20),
+
                   const Text(
-                    'Stok Produk',
-                    style: TextStyle(fontWeight: FontWeight.bold),
+                    'Jumlah Pesanan',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                  Text('${product['stock'] ?? 0} tersedia'),
+
+                  Row(
+                    children: [
+                      IconButton(
+                        onPressed:
+                            purchasing || quantity <= 1
+                                ? null
+                                : () {
+                                    setState(() {
+                                      quantity--;
+                                    });
+                                  },
+                        icon: const Icon(
+                          Icons.remove_circle_outline,
+                        ),
+                      ),
+
+                      Text(
+                        '$quantity',
+                        style: const TextStyle(
+                          fontSize: 20,
+                        ),
+                      ),
+
+                      IconButton(
+                        onPressed:
+                            purchasing || quantity >= stock
+                                ? null
+                                : () {
+                                    setState(() {
+                                      quantity++;
+                                    });
+                                  },
+                        icon: const Icon(
+                          Icons.add_circle_outline,
+                        ),
+                      ),
+
+                      const Spacer(),
+
+                      Text('Stok: $stock'),
+                    ],
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  Text(
+                    'Total: ${formatRupiah(price * quantity)}',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green,
+                    ),
+                  ),
+
                   const SizedBox(height: 20),
-                  const Text(
-  'Jumlah Pesanan',
-  style: TextStyle(fontWeight: FontWeight.bold),
-),
-Row(
-  children: [
-    IconButton(
-      onPressed: purchasing || quantity <= 1
-          ? null
-          : () => setState(() => quantity--),
-      icon: const Icon(Icons.remove_circle_outline),
-    ),
-    Text(
-      '$quantity',
-      style: const TextStyle(fontSize: 20),
-    ),
-    IconButton(
-      onPressed: purchasing || quantity >= stock
-          ? null
-          : () => setState(() => quantity++),
-      icon: const Icon(Icons.add_circle_outline),
-    ),
-    const Spacer(),
-    Text('Stok: $stock'),
-  ],
-),
-const SizedBox(height: 8),
-Text(
-  'Total: ${formatRupiah(price * quantity)}',
-  style: const TextStyle(
-    fontSize: 18,
-    fontWeight: FontWeight.bold,
-    color: Colors.green,
-  ),
-),
-const SizedBox(height: 20),
+
                   const Text(
                     'Deskripsi Produk',
                     style: TextStyle(
@@ -1000,16 +1077,23 @@ const SizedBox(height: 20),
                       fontWeight: FontWeight.bold,
                     ),
                   ),
+
                   const SizedBox(height: 8),
+
                   Text(
                     product['description']?.toString() ??
                         'Belum ada deskripsi produk.',
                   ),
+
                   const SizedBox(height: 30),
+
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
-                      onPressed: purchasing ? null : buyNow,
+                      onPressed:
+                          purchasing || stock <= 0
+                              ? null
+                              : buyNow,
                       icon: purchasing
                           ? const SizedBox(
                               width: 20,
@@ -1019,7 +1103,9 @@ const SizedBox(height: 20),
                                 color: Colors.white,
                               ),
                             )
-                          : const Icon(Icons.shopping_cart),
+                          : const Icon(
+                              Icons.shopping_cart,
+                            ),
                       label: Text(
                         purchasing
                             ? 'Memproses...'
@@ -1028,7 +1114,9 @@ const SizedBox(height: 20),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.green,
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 15),
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 15,
+                        ),
                       ),
                     ),
                   ),
