@@ -958,6 +958,42 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                   Text('${product['stock'] ?? 0} tersedia'),
                   const SizedBox(height: 20),
                   const Text(
+  'Jumlah Pesanan',
+  style: TextStyle(fontWeight: FontWeight.bold),
+),
+Row(
+  children: [
+    IconButton(
+      onPressed: purchasing || quantity <= 1
+          ? null
+          : () => setState(() => quantity--),
+      icon: const Icon(Icons.remove_circle_outline),
+    ),
+    Text(
+      '$quantity',
+      style: const TextStyle(fontSize: 20),
+    ),
+    IconButton(
+      onPressed: purchasing || quantity >= stock
+          ? null
+          : () => setState(() => quantity++),
+      icon: const Icon(Icons.add_circle_outline),
+    ),
+    const Spacer(),
+    Text('Stok: $stock'),
+  ],
+),
+const SizedBox(height: 8),
+Text(
+  'Total: ${formatRupiah(price * quantity)}',
+  style: const TextStyle(
+    fontSize: 18,
+    fontWeight: FontWeight.bold,
+    color: Colors.green,
+  ),
+),
+const SizedBox(height: 20),
+                  const Text(
                     'Deskripsi Produk',
                     style: TextStyle(
                       fontSize: 18,
